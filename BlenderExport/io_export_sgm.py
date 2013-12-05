@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'SlinDev Game Model format (.sgm)',
 	'author': 'Nils Daumann',
 	'blender': (2, 6, 5),
-	'version': (1, 4, 1),
+	'version': (1, 5, 0),
 	'description': 'Exports an object as .sgm file format.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> SlinDev Game Model (.sgm)'}
@@ -14,12 +14,17 @@ bl_info = {
 #Structure of exported mesh files (.sgm)
 ############################################################
 #magic number - uint32 - 352658064
-#version - uint8 - 2
+#version - uint8 - 3
 #number of materials - uint8
 #material id - uint8
-#	number of textures - uint8
-#		filename length - uint16
-#		filename - char*filename length
+#	number of uv sets - uint8
+#		number of textures - uint8
+#			texture type hint - uint8
+#			filename length - uint16
+#			filename - char*filename length
+#	number of colors - uint8
+#		color type hint - uint8
+#		color rgba - float32*4
 #
 #number of meshs - uint8
 #mesh id - uint8
@@ -129,12 +134,21 @@ bl_info = {
 #-scaled armatures and different origin of model and armature are problematic
 #-polygons other than tris aren´t working
 ##
+#################################
+##V1.5 2013/09/06
+#-file format version 3
+#-added support for material colors
+#-textures are now assigned to correct uv coordinates
+#Known Problems:
+#-texture order may not fit to uv order...
+#-crashes on exporting vertex colors?
+#-scaled armatures and different origin of model and armature are problematic
+##
 
 
 #################################
 #ToDO
 #################################
-#-export of more than one texture per mesh for things like normalmaps
 #-generation and export of shadow volume data, which otherwize is done on model loading in iSDGE
 #-automatic converting of texture files to the desired format
 #-export of more complex material setups
@@ -153,6 +167,12 @@ import mathutils
 from mathutils import Matrix
 
 #Container classes for a better overview
+class c_material(object):
+	__slots__ = 'imagedict', 'colors'
+	def __init__(self):
+		self.imagedict = {}
+		self.colors = []
+
 class c_vertex(object):
 	__slots__ = 'blendindex', 'position', 'uvs', 'color', 'normal', 'tangent', 'weights', 'bones'
 	def __init__(self, blendindex, position = (0, 0, 0), uvs = [], color = None, normal = (0, 0, 0), tangent = (0, 0, 0, 0), weights = (0, 0, 0, 0), bones = (0, 0, 0, 0)):
@@ -166,20 +186,20 @@ class c_vertex(object):
 		self.bones = bones
 
 class c_triangle(object):
-	__slots__ = 'vertices', 'images', 'newindices'
-	def __init__(self, vertices = [], images = [], newindices = None):
+	__slots__ = 'vertices', 'material', 'newindices'
+	def __init__(self, vertices = [], material = 0, newindices = None):
 		self.vertices = vertices
-		self.images = images
+		self.material = material
 		self.newindices = newindices		#indices within the c_mesh
 		
 class c_mesh(object):
-	__slots__ = 'triangles', 'images', 'vertices', 'indices'
-	def __init__(self, images = [], tri = None):
+	__slots__ = 'triangles', 'material', 'vertices', 'indices'
+	def __init__(self, material = 0, tri = None):
 		self.vertices = []
 		self.triangles = []
 		if tri != None:
 			self.triangles.append(tri)
-		self.images = images
+		self.material = material
 		self.indices = []
 	
 	#doublicates face vertices with different uv coords and sets the new index
@@ -276,14 +296,21 @@ class c_object(object):
 		if len(ArmatureList) > 1:
 			print("only one armature per object supported: possible messed up bone assignements")
 
-		obj.update(calc_tessface=True)
-		triangles = []
-		#generate vertices and triangles
-		for i, face in enumerate(obj.polygons):
-			images = []
-			for tex in obj.uv_textures:
-				if tex.data[i].image:
-					imgpath = tex.data[i].image.filepath
+		#generate list of the objects materials
+		materials = []
+		for i, mat in enumerate(obj.materials):
+			material = c_material()
+			if mat.use_transparency:
+				material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], mat.alpha), 0))
+			else:
+				material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], 1.0), 0))
+
+			for tex in mat.texture_slots:
+				if tex == None:
+					continue
+				img = "default."+texextension
+				if tex.texture.image:
+					imgpath = tex.texture.image.filepath
 					img = imgpath.split('/')
 					img = img[len(img)-1]
 					img = img.split('\\')
@@ -291,21 +318,32 @@ class c_object(object):
 					if texextension != 'keep':
 						img = img[:-3]
 						img += texextension
-					images.append((tex.data[i].image.name, img))
-				else:
-					images.append(("default", "default."+texextension))
-			
+				
+				uvlayer = obj.uv_layers.find(tex.uv_layer)
+				if uvlayer < 0:
+					uvlayer = 0
+				if not uvlayer in material.imagedict:
+					material.imagedict[uvlayer] = []
+				material.imagedict[uvlayer].append((img, 0))
+
+			materials.append(material)
+
+
+		obj.update(calc_tessface=True)
+		triangles = []
+		#generate vertices and triangles
+		for i, face in enumerate(obj.tessfaces):
 			verts = []
 			for n, vertind in enumerate(face.vertices):
 				uvs = []
 				for tex in obj.tessface_uv_textures:
 					uvs.append((round(tex.data[i].uv[n][0], 6), 1.0-round(tex.data[i].uv[n][1], 6)))
 				color = None
-				if len(obj.vertex_colors) > 0:
+				if len(obj.tessface_vertex_colors) > 0:
 					alpha = 1.0
-					if len(obj.vertex_colors) > 1:
-						alpha = obj.vertex_colors[1].data[i].color.r
-					color = (obj.vertex_colors[0].data[i].color.r, obj.vertex_colors[0].data[i].color.g, obj.vertex_colors[0].data[i].color.b, alpha)
+					if len(obj.tessface_vertex_colors) > 1:
+						alpha = obj.tessface_vertex_colors[1].data[i].color.r
+					color = (obj.tessface_vertex_colors[0].data[i].color.r, obj.tessface_vertex_colors[0].data[i].color.g, obj.tessface_vertex_colors[0].data[i].color.b, alpha)
 				
 				position = (obj.vertices[vertind].co.x, obj.vertices[vertind].co.y, obj.vertices[vertind].co.z)
 				normal = (obj.vertices[vertind].normal.x, obj.vertices[vertind].normal.y, obj.vertices[vertind].normal.z)
@@ -333,27 +371,28 @@ class c_object(object):
 				verts[-1].weights = weights	#hacky as the above line should already do this, but for some reason does not...
 				verts[-1].bones = bones
 			
+			material = materials[face.material_index]
 			if len(face.vertices) == 3:
-				triangles.append(c_triangle(verts, images))
+				triangles.append(c_triangle(verts, material))
 			else:
 				tri1 = [verts[0], verts[1], verts[2]]
 				tri2 = [verts[0], verts[2], verts[3]]
-				triangles.append(c_triangle(tri1, images))
-				triangles.append(c_triangle(tri2, images))
+				triangles.append(c_triangle(tri1, material))
+				triangles.append(c_triangle(tri2, material))
 		
 		#generate meshs
 		self.meshs = []
-		m = c_mesh(triangles[0].images)
+		m = c_mesh(triangles[0].material)
 		self.meshs.append(m)
 		for tri in triangles:
 			check = 0
 			for mesh in self.meshs:
-				if mesh.images == tri.images:
+				if mesh.material == tri.material:
 					mesh.triangles.append(tri)
 					check = 1
 					break
 			if check == 0:
-				m = c_mesh(tri.images, tri)
+				m = c_mesh(tri.material, tri)
 				self.meshs.append(m)
 		
 		for mesh in self.meshs:
@@ -369,23 +408,34 @@ class c_object(object):
 		file = open(filename, 'wb')
 
 		file.write(struct.pack('<L', 352658064))
-		print("write file format version number: 2")
-		file.write(struct.pack('<B', 2))
-		
+		print("write file format version number: 3")
+		file.write(struct.pack('<B', 3))
+
 		print("write materials")
 		file.write(struct.pack('<B', len(self.meshs)))  #number of materials
 		for i, mesh in enumerate(self.meshs):
 			file.write(struct.pack('<B', i))			#material id
-			texcount = len(mesh.images)
 			if exptextures != True:
-				texcount = 0
-			file.write(struct.pack('<B', texcount)) #number of textures
-			if texcount > 0:
-				for img in mesh.images:
-					texname = img[1].encode("utf_8")
-					file.write(struct.pack('<H', len(texname)+1))
-					file.write(struct.pack('<%is'%(len(texname)+1), texname))
-		
+				file.write(struct.pack('<B', 0))	#uvcount
+			else:
+				numuvs = len(mesh.material.imagedict)
+				file.write(struct.pack('<B', numuvs)) #uvcount
+				for uv in range(0, numuvs):
+					numimgs = len(mesh.material.imagedict[uv])
+					file.write(struct.pack('<B', numimgs)) #imagecount
+					for img in mesh.material.imagedict[uv]:
+						file.write(struct.pack('<B', img[1])) #usage hint
+						texname = img[0].encode("utf_8")
+						file.write(struct.pack('<H', len(texname)+1))
+						file.write(struct.pack('<%is'%(len(texname)+1), texname))
+
+				numcols = len(mesh.material.colors)
+				file.write(struct.pack('<B', numcols)) #number of colors
+				for col in mesh.material.colors:
+					file.write(struct.pack('<B', col[1]))
+					bindata = struct.pack('<ffff', col[0][0], col[0][1], col[0][2], col[0][3])
+					file.write(bindata)
+
 		print("write meshs")
 		file.write(struct.pack('<B', len(self.meshs)))
 		for i, mesh in enumerate(self.meshs):
@@ -396,7 +446,7 @@ class c_object(object):
 			file.write(struct.pack('<B', i))	#mesh id
 			file.write(struct.pack('<B', i))	#material id
 			file.write(struct.pack('<I', len(mesh.vertices)))   #vertexnum
-			file.write(struct.pack('<B', len(mesh.images))) #texcoord count
+			file.write(struct.pack('<B', len(mesh.material.imagedict))) #texcoord count
 			file.write(struct.pack('<B', datachannels)) #texdata count
 			
 			if exptangents == True:
@@ -419,7 +469,7 @@ class c_object(object):
 				file.write(bindata)
 
 				set = 0
-				while set < len(mesh.images):
+				while set < len(mesh.material.imagedict):
 					bindata = struct.pack('<ff', vertex.uvs[set][0], vertex.uvs[set][1])
 					file.write(bindata)
 					set += 1
