@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'SlinDev Game Model format (.sgm)',
 	'author': 'Nils Daumann',
 	'blender': (2, 6, 5),
-	'version': (1, 5, 0),
+	'version': (1, 5, 1),
 	'description': 'Exports an object as .sgm file format.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> SlinDev Game Model (.sgm)'}
@@ -144,6 +144,15 @@ bl_info = {
 #-crashes on exporting vertex colors?
 #-scaled armatures and different origin of model and armature are problematic
 ##
+#################################
+##V1.5.1 2013/12/06
+#-vertices are now correctly seperated for hard edges
+#-texture usage hints are 0 for diffuse texture, 1 for normal maps and 2 for spec maps
+#Known Problems:
+#-texture order may not fit to uv order...
+#-crashes on exporting vertex colors?
+#-scaled armatures and different origin of model and armature are problematic
+##
 
 
 #################################
@@ -185,6 +194,17 @@ class c_vertex(object):
 		self.weights = weights
 		self.bones = bones
 
+	def getTuple(self):
+		position = tuple(self.position)
+		uvs = tuple(self.uvs)
+		color = (-1, -1, -1, -1)
+		if self.color != None:
+			color = tuple(self.color)
+		normal = tuple(self.normal)
+		weights = tuple(self.weights)
+		bones = tuple(self.bones)
+		return (position, uvs, color, normal, weights, bones)
+
 class c_triangle(object):
 	__slots__ = 'vertices', 'material', 'newindices'
 	def __init__(self, vertices = [], material = 0, newindices = None):
@@ -208,12 +228,12 @@ class c_mesh(object):
 		for tri in self.triangles:
 			ind = []
 			for trivert in tri.vertices:
-				uvtuple = tuple(trivert.uvs)
-				if (trivert.position, uvtuple) in inddict:
-					ind.append(inddict[(trivert.position, uvtuple)])
+				verttuple = trivert.getTuple()
+				if verttuple in inddict:
+					ind.append(inddict[verttuple])
 				else:
 					ind.append(len(self.vertices))
-					inddict[(trivert.position, uvtuple)] = len(self.vertices)
+					inddict[verttuple] = len(self.vertices)
 					self.vertices.append(trivert)
 			
 			self.indices.append(ind[0])
@@ -324,7 +344,12 @@ class c_object(object):
 					uvlayer = 0
 				if not uvlayer in material.imagedict:
 					material.imagedict[uvlayer] = []
-				material.imagedict[uvlayer].append((img, 0))
+				usagehint = 0
+				if tex.use_map_normal:
+					usagehint = 1
+				if tex.use_map_color_spec:
+					usagehint = 2
+				material.imagedict[uvlayer].append((img, usagehint))
 
 			materials.append(material)
 
