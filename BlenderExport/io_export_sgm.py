@@ -2,13 +2,13 @@
 #Addon header
 #################################
 bl_info = {
-	'name': 'SlinDev Game Model format (.sgm)',
+	'name': 'Rayne mesh and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
-	'blender': (2, 6, 5),
-	'version': (1, 5, 1),
-	'description': 'Exports an object as .sgm file format.',
+	'blender': (2, 7, 0),
+	'version': (1, 5, 2),
+	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
-	'location': 'File -> Export -> SlinDev Game Model (.sgm)'}
+	'location': 'File -> Export -> Rayne Game Object (.sgm, .sga)'}
 
 ############################################################
 #Structure of exported mesh files (.sgm)
@@ -153,7 +153,16 @@ bl_info = {
 #-crashes on exporting vertex colors?
 #-scaled armatures and different origin of model and armature are problematic
 ##
-
+#################################
+##V1.5.2 2013/03/21
+#-updated to work with blender 2.70
+#-fixed vertex color issue
+#-fixed a problem with the export failing if a non image texture is attached to a material
+#-as default tangent generation is now on
+#Known Problems:
+#-texture order may not fit to uv order...
+#-scaled armatures and different origin of model and armature are problematic
+##
 
 #################################
 #ToDO
@@ -316,6 +325,11 @@ class c_object(object):
 		if len(ArmatureList) > 1:
 			print("only one armature per object supported: possible messed up bone assignements")
 
+		#apply object transforms
+#		objparent.select = True
+#		bpy.context.scene.objects.active = objparent
+#		bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
 		#generate list of the objects materials
 		materials = []
 		for i, mat in enumerate(obj.materials):
@@ -326,7 +340,7 @@ class c_object(object):
 				material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], 1.0), 0))
 
 			for tex in mat.texture_slots:
-				if tex == None:
+				if tex == None or tex.texture == None or tex.texture.type != 'IMAGE':
 					continue
 				img = "default."+texextension
 				if tex.texture.image:
@@ -365,11 +379,25 @@ class c_object(object):
 					uvs.append((round(tex.data[i].uv[n][0], 6), 1.0-round(tex.data[i].uv[n][1], 6)))
 				color = None
 				if len(obj.tessface_vertex_colors) > 0:
+					colors = obj.tessface_vertex_colors[0].data[i]
 					alpha = 1.0
-					if len(obj.tessface_vertex_colors) > 1:
-						alpha = obj.tessface_vertex_colors[1].data[i].color.r
-					color = (obj.tessface_vertex_colors[0].data[i].color.r, obj.tessface_vertex_colors[0].data[i].color.g, obj.tessface_vertex_colors[0].data[i].color.b, alpha)
-				
+					if n == 0:
+						if len(obj.tessface_vertex_colors) > 1:
+							alpha = obj.tessface_vertex_colors[1].data[i].color1.r
+						color = (colors.color1.r, colors.color1.g, colors.color1.b, alpha)
+					elif n == 1:
+						if len(obj.tessface_vertex_colors) > 1:
+							alpha = obj.tessface_vertex_colors[1].data[i].color2.r
+						color = (colors.color2.r, colors.color2.g, colors.color2.b, alpha)
+					elif n == 2:
+						if len(obj.tessface_vertex_colors) > 1:
+							alpha = obj.tessface_vertex_colors[1].data[i].color3.r
+						color = (colors.color3.r, colors.color3.g, colors.color3.b, alpha)
+					elif n == 3:
+						if len(obj.tessface_vertex_colors) > 1:
+							alpha = obj.tessface_vertex_colors[1].data[i].color4.r
+						color = (colors.color4.r, colors.color4.g, colors.color4.b, alpha)
+
 				position = (obj.vertices[vertind].co.x, obj.vertices[vertind].co.y, obj.vertices[vertind].co.z)
 				normal = (obj.vertices[vertind].normal.x, obj.vertices[vertind].normal.y, obj.vertices[vertind].normal.z)
 
@@ -578,6 +606,12 @@ class c_armature(object):
 		else:
 			return
 		armature = ArmatureList[0].object
+
+		#apply object transforms
+#		armature.select = True
+#		bpy.context.scene.objects.active = armature
+#		bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
 		#get skeleton data
 		for bone in armature.data.bones:
 			b = c_bone(bone.name, armature.matrix_world*bone.head_local, False if bone.parent else True)	#add bone
@@ -710,7 +744,7 @@ class ExportSGM(bpy.types.Operator):
 				   ),
 			default='png',
 			)
-	exptangents = BoolProperty(name="Export tangents", description="Generate tangents for the model to use for example tangent space normal mapping.", default=False)
+	exptangents = BoolProperty(name="Export tangents", description="Generate tangents for the model to use for example tangent space normal mapping.", default=True)
 	expanimations = BoolProperty(name="Export animations", description="Export animation data in an additional file and reference it in the object.", default=True)
 	expshadow = False #BoolProperty(name="Export shadow", description="Prepare the mesh for shadow volume rendering to speed up loading.", default=False)
 	
