@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ufwb version="1.7">
+    <grammar name="SGM Model Files" start="id:624" author="Nils Daumann" complete="yes">
+        <description>Grammatic for Raynes SGM model file format</description>
+        <structure name="root" id="624" length="0" encoding="ISO_8859-1:1987" endian="little" signed="no">
+            <number name="magic_number" id="625" type="integer" length="4"/>
+            <number name="version" id="626" type="integer" length="1"/>
+            <number name="material_count" id="627" type="integer" length="1"/>
+            <structure name="material" id="628" length="0" repeat="id:627" repeatmin="0" repeatmax="-1">
+                <number name="id" id="629" type="integer" length="1"/>
+                <number name="uv_count" id="630" type="integer" length="1"/>
+                <structure name="uv_set" id="631" repeat="id:630" repeatmin="0" repeatmax="-1">
+                    <number name="texture_count" id="632" type="integer" length="1"/>
+                    <structure name="texture" id="633" repeat="id:632" repeatmin="0" repeatmax="-1" encoding="ISO_8859-1:1987">
+                        <number name="type_hint" id="634" type="integer" length="1"/>
+                        <number name="name_length" id="635" type="integer" length="2"/>
+                        <string name="file_name" id="636" type="fixed-length" length="name_length"/>
+                    </structure>
+                </structure>
+                <number name="color_count" id="639" type="integer" length="1"/>
+                <structure name="color" id="640" repeat="id:639" repeatmin="0" repeatmax="-1">
+                    <number name="type_hint" id="641" type="integer" length="1"/>
+                    <number name="red" id="642" type="float" length="32" lengthunit="bit" signed="yes"/>
+                    <number name="green" id="643" type="float" length="32" lengthunit="bit" signed="yes"/>
+                    <number name="blue" id="644" type="float" length="32" lengthunit="bit" signed="yes"/>
+                    <number name="alpha" id="645" type="float" length="32" lengthunit="bit" signed="yes"/>
+                </structure>
+            </structure>
+            <number name="mesh_count" id="648" type="integer" length="1"/>
+            <structure name="mesh" id="649" repeat="id:648" repeatmin="0" repeatmax="-1">
+                <number name="id" id="650" type="integer" length="1"/>
+                <number name="material_id" id="651" type="integer" length="1"/>
+                <number name="vertex_count" id="652" type="integer" length="4"/>
+                <number name="uv_count" id="653" type="integer" length="1"/>
+                <number name="color_channel_count" id="654" type="integer" length="1"/>
+                <number name="has_tangents" id="655" type="integer" length="1">
+                    <fixedvalues>
+                        <fixedvalue name="no" value="0"/>
+                        <fixedvalue name="yes" value="1"/>
+                    </fixedvalues>
+                </number>
+                <number name="has_bones" id="656" type="integer" length="1">
+                    <fixedvalues>
+                        <fixedvalue name="no" value="0"/>
+                        <fixedvalue name="yes" value="1"/>
+                    </fixedvalues>
+                </number>
+                <structure name="vertices" id="657">
+                    <structure name="vertex_data" id="658" repeat="id:652" repeatmin="0" repeatmax="-1">
+                        <structure name="position" id="659">
+                            <number name="x" id="660" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="y" id="661" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="z" id="662" type="float" length="32" lengthunit="bit" signed="yes"/>
+                        </structure>
+                        <structure name="normal" id="664">
+                            <number name="x" id="665" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="y" id="666" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="z" id="667" type="float" length="32" lengthunit="bit" signed="yes"/>
+                        </structure>
+                        <structure name="uv_set" id="669" repeat="id:653" repeatmin="0" repeatmax="-1">
+                            <number name="u" id="670" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="v" id="671" type="float" length="32" lengthunit="bit" signed="yes"/>
+                        </structure>
+                        <structure name="color_channel" id="673" repeat="id:654" repeatmin="0" repeatmax="-1">
+                            <number name="value" id="674" type="float" length="32" lengthunit="bit" signed="yes"/>
+                        </structure>
+                        <structure name="tangent" id="676" repeat="id:655" repeatmin="0" repeatmax="-1">
+                            <number name="x" id="677" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="y" id="678" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="z" id="679" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="bitangent_direction" id="680" type="float" length="32" lengthunit="bit" signed="yes"/>
+                        </structure>
+                        <structure name="bone" id="682" repeat="id:656" repeatmin="0" repeatmax="-1">
+                            <number name="weight_0" id="683" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="weight_1" id="684" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="weight_2" id="685" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="weight_3" id="686" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="index_0" id="687" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="index_1" id="688" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="index_2" id="689" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <number name="index_3" id="690" type="float" length="32" lengthunit="bit" signed="yes"/>
+                        </structure>
+                    </structure>
+                </structure>
+                <number name="index_count" id="694" type="integer" length="4"/>
+                <number name="index_size" id="695" type="integer" length="1"/>
+                <structure name="indices" id="696">
+                    <number name="index" id="697" repeatmin="0" repeatmax="index_count" type="integer" length="index_size"/>
+                </structure>
+            </structure>
+            <number name="has_animation" id="700" type="integer" length="1">
+                <fixedvalues>
+                    <fixedvalue name="no" value="0"/>
+                    <fixedvalue name="yes" value="1"/>
+                </fixedvalues>
+            </number>
+            <structure name="animation" id="701" repeat="id:700" repeatmin="0">
+                <number name="name_length" id="702" type="integer" length="2"/>
+                <string name="filename" id="703" type="fixed-length" length="name_length"/>
+            </structure>
+        </structure>
+    </grammar>
+</ufwb>

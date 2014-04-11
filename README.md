@@ -28,7 +28,7 @@ SGM and SGA File Formats
 #	used materials id - uint8
 #	number of vertices - uint32
 #	texcoord count - uint8
-#	texdata count - uint8
+#	color channel count - uint8 usually 0 or 4
 #	has tangents - uint8 0 if not, 1 otherwise
 #	has bones - uint8 0 if not, 1 otherwise
 #	interleaved vertex data - float32

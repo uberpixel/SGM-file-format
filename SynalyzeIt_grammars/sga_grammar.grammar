@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ufwb version="1.7">
+    <grammar name="SGA animation files" start="id:69" author="Nils Daumann" complete="yes">
+        <description>Grammar for Raynes sga animation files.</description>
+        <structure name="root" id="69" encoding="ISO_8859-1:1987" endian="little" signed="no">
+            <number name="magic_number" id="70" type="integer" length="4"/>
+            <number name="version" id="71" type="integer" length="1"/>
+            <number name="name_length" id="72" type="integer" length="2"/>
+            <string name="name" id="73" type="fixed-length" length="name_length"/>
+            <structure name="skeleton" id="74">
+                <number name="bone_count" id="75" type="integer" length="2"/>
+                <structure name="bone" id="76" repeat="id:75" repeatmin="0" repeatmax="-1">
+                    <number name="name_length" id="77" type="integer" length="2"/>
+                    <string name="name" id="78" type="fixed-length" length="name_length"/>
+                    <structure name="position" id="79">
+                        <number name="x" id="80" type="float" length="32" lengthunit="bit" signed="yes"/>
+                        <number name="y" id="81" type="float" length="32" lengthunit="bit" signed="yes"/>
+                        <number name="z" id="82" type="float" length="32" lengthunit="bit" signed="yes"/>
+                    </structure>
+                    <number name="is_root" id="84" type="integer" length="1">
+                        <fixedvalues>
+                            <fixedvalue name="yes" value="1"/>
+                            <fixedvalue name="no" value="0"/>
+                        </fixedvalues>
+                    </number>
+                    <number name="child_count" id="85" type="integer" length="2"/>
+                    <structure name="children" id="86" length="0" repeat="id:85" repeatmin="0" repeatmax="-1">
+                        <number name="id" id="87" type="integer" length="2"/>
+                    </structure>
+                </structure>
+            </structure>
+            <structure name="animations" id="91">
+                <number name="animation_count" id="92" type="integer" length="2"/>
+                <structure name="animation" id="93" repeat="id:92" repeatmin="0" repeatmax="-1">
+                    <number name="name_length" id="94" type="integer" length="2"/>
+                    <string name="name" id="95" type="fixed-length" length="name_length"/>
+                    <number name="bone_count" id="96" type="integer" length="2"/>
+                    <structure name="bone" id="97" repeat="id:96" repeatmin="0" repeatmax="-1">
+                        <number name="id" id="98" type="integer" length="2"/>
+                        <number name="frame_count" id="99" type="integer" length="4"/>
+                        <structure name="frame" id="100" repeat="id:99" repeatmin="0" repeatmax="-1">
+                            <number name="timestamp" id="101" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            <structure name="position" id="102">
+                                <number name="x" id="103" type="float" length="32" lengthunit="bit" signed="yes"/>
+                                <number name="y" id="104" type="integer" length="1" signed="yes"/>
+                                <number name="z" id="105" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            </structure>
+                            <structure name="scale" id="107">
+                                <number name="x" id="108" type="float" length="32" lengthunit="bit" signed="yes"/>
+                                <number name="y" id="109" type="float" length="32" lengthunit="bit" signed="yes"/>
+                                <number name="z" id="110" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            </structure>
+                            <structure name="rotation" id="112">
+                                <number name="x" id="113" type="float" length="32" lengthunit="bit" signed="yes"/>
+                                <number name="y" id="114" type="float" length="32" lengthunit="bit" signed="yes"/>
+                                <number name="z" id="115" type="float" length="32" lengthunit="bit" signed="yes"/>
+                                <number name="w" id="116" type="float" length="32" lengthunit="bit" signed="yes"/>
+                            </structure>
+                        </structure>
+                    </structure>
+                </structure>
+            </structure>
+        </structure>
+    </grammar>
+</ufwb>
