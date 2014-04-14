@@ -2,13 +2,13 @@
 #Addon header
 #################################
 bl_info = {
-	'name': 'Rayne mesh and animation formats (.sgm, .sga)',
+	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
 	'blender': (2, 7, 0),
-	'version': (1, 5, 2),
+	'version': (1, 5, 3),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
-	'location': 'File -> Export -> Rayne Game Object (.sgm, .sga)'}
+	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
 
 ############################################################
 #Structure of exported mesh files (.sgm)
@@ -16,7 +16,7 @@ bl_info = {
 #magic number - uint32 - 352658064
 #version - uint8 - 3
 #number of materials - uint8
-#material id - uint8
+#	material id - uint8
 #	number of uv sets - uint8
 #		number of textures - uint8
 #			texture type hint - uint8
@@ -27,7 +27,7 @@ bl_info = {
 #		color rgba - float32*4
 #
 #number of meshs - uint8
-#mesh id - uint8
+#	mesh id - uint8
 #	used materials id - uint8
 #	number of vertices - uint32
 #	texcoord count - uint8
@@ -154,11 +154,19 @@ bl_info = {
 #-scaled armatures and different origin of model and armature are problematic
 ##
 #################################
-##V1.5.2 2013/03/21
+##V1.5.2 2014/03/21
 #-updated to work with blender 2.70
 #-fixed vertex color issue
 #-fixed a problem with the export failing if a non image texture is attached to a material
 #-as default tangent generation is now on
+#Known Problems:
+#-texture order may not fit to uv order...
+#-scaled armatures and different origin of model and armature are problematic
+##
+#################################
+##V1.5.3 2014/04/14
+#-tangent generation is now ignored if there are no uv coordinates
+#-renamed the menu item and description
 #Known Problems:
 #-texture order may not fit to uv order...
 #-scaled armatures and different origin of model and armature are problematic
@@ -451,7 +459,7 @@ class c_object(object):
 		for mesh in self.meshs:
 			mesh.uvsplit()
 		
-		if exptangents == True:
+		if exptangents == True and len(material.imagedict) > 0:
 			for mesh in self.meshs:
 				mesh.gentangents()
 	
@@ -726,11 +734,11 @@ class c_armature(object):
 #################################
 from bpy.props import *
 class ExportSGM(bpy.types.Operator):
-	'''Export to iSDGE model file format (.sgm)'''
-	bl_idname = "export.isdge_sgm"
-	bl_label = 'Export iSDGE model'
+	'''Export to Rayne model file format (.sgm)'''
+	bl_idname = "export.rayne_sgm"
+	bl_label = 'Export Rayne Model'
 
-	filepath = StringProperty(name="File Path", description="Filepath used for exporting the iSDGE model file", maxlen= 1024, default= "")
+	filepath = StringProperty(name="File Path", description="Filepath used for exporting the Rayne model file", maxlen= 1024, default= "")
 	#filepath = StringProperty(subtype='FILE_PATH')
 	check_existing = BoolProperty(name="Check Existing", description="Check and warn on overwriting existing files", default=True, options={'HIDDEN'})
 	
@@ -770,7 +778,7 @@ class ExportSGM(bpy.types.Operator):
 
 def menu_func(self, context):
 	default_path = os.path.splitext(bpy.data.filepath)[0] + ".sgm"
-	self.layout.operator(ExportSGM.bl_idname, text="SlinDev Game Mode (.sgm)").filepath = default_path
+	self.layout.operator(ExportSGM.bl_idname, text="Rayne Model (.sgm)").filepath = default_path
 
 def register():
 	bpy.utils.register_module(__name__)
