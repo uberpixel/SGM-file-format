@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
 	'blender': (2, 7, 0),
-	'version': (1, 5, 3),
+	'version': (1, 5, 4),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
@@ -167,6 +167,13 @@ bl_info = {
 ##V1.5.3 2014/04/14
 #-tangent generation is now ignored if there are no uv coordinates
 #-renamed the menu item and description
+#Known Problems:
+#-texture order may not fit to uv order...
+#-scaled armatures and different origin of model and armature are problematic
+##
+#################################
+##V1.5.4 2019/05/18
+#-added alternative texture format options (.astc, .dds, .* (* means exactly that and will be replaced by engine with preferred type for platform))
 #Known Problems:
 #-texture order may not fit to uv order...
 #-scaled armatures and different origin of model and armature are problematic
@@ -747,10 +754,12 @@ class ExportSGM(bpy.types.Operator):
 	texextension = EnumProperty(
 			name="Texture extension",
 			items=(('png', ".png", ""),
-				   ('pvr', ".pvr", ""),
+				   ('dds', ".dds", ""),
+				   ('astc', ".astc", ""),
+				   ('*', "flexible", ""),
 				   ('keep', "keep current", ""),
 				   ),
-			default='png',
+			default='*',
 			)
 	exptangents = BoolProperty(name="Export tangents", description="Generate tangents for the model to use for example tangent space normal mapping.", default=True)
 	expanimations = BoolProperty(name="Export animations", description="Export animation data in an additional file and reference it in the object.", default=True)
