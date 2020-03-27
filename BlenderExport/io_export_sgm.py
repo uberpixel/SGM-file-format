@@ -497,12 +497,12 @@ class c_object(object):
 						file.write(struct.pack('<H', len(texname)+1))
 						file.write(struct.pack('<%is'%(len(texname)+1), texname))
 
-				numcols = len(mesh.material.colors)
-				file.write(struct.pack('<B', numcols)) #number of colors
-				for col in mesh.material.colors:
-					file.write(struct.pack('<B', col[1]))
-					bindata = struct.pack('<ffff', col[0][0], col[0][1], col[0][2], col[0][3])
-					file.write(bindata)
+			numcols = len(mesh.material.colors)
+			file.write(struct.pack('<B', numcols)) #number of colors
+			for col in mesh.material.colors:
+				file.write(struct.pack('<B', col[1]))
+				bindata = struct.pack('<ffff', col[0][0], col[0][1], col[0][2], col[0][3])
+				file.write(bindata)
 
 		print("write meshs")
 		file.write(struct.pack('<B', len(self.meshs)))
