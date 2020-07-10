@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
 	'blender': (2, 80, 0),
-	'version': (1, 5, 5),
+	'version': (1, 6, 0),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
@@ -179,17 +179,27 @@ bl_info = {
 #-scaled armatures and different origin of model and armature are problematic
 ##
 #################################
-##V1.5.5 2019/07/06
+##V1.5.5 2020/07/06
 #-fixed a problem when not having a uv set
 #-updated for blender 2.80.x
 #Known Problems:
 #-texture order may not fit to uv order...
 #-scaled armatures and different origin of model and armature are problematic
 ##
+#################################
+##V1.6 2019/07/10
+#-fixed color export
+#-automatically apply object transformations to mesh
+#Known Problems:
+#-texture order may not fit uv order...
+#-scaled armatures and different origin of model and armature are problematic
+##
 
 #################################
 #ToDO
 #################################
+#-automatically apply object transformations to armature
+#-combine and export all selected objects into one model
 #-generation and export of shadow volume data, which otherwize is done on model loading in iSDGE
 #-automatic converting of texture files to the desired format
 #-export of more complex material setups
@@ -344,14 +354,12 @@ class c_object(object):
 		ArmatureList = [Modifier for Modifier in objparent.modifiers if Modifier.type == "ARMATURE"]
 		if ArmatureList:
 			self.hasbones = True
-#   		self.animname = ArmatureList[0].object.data.name+".sga"
 		if len(ArmatureList) > 1:
 			print("only one armature per object supported: possible messed up bone assignements")
 
 		#apply object transforms
-#   	objparent.select = True
-#   	bpy.context.scene.objects.active = objparent
-#   	bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+		obj = obj.copy()
+		obj.transform(objparent.matrix_world)
 
 		#generate list of the objects materials
 		materials = []
@@ -364,6 +372,17 @@ class c_object(object):
 
 			if mat.use_nodes and mat.node_tree:
 				for node in mat.node_tree.nodes:
+					if node.bl_idname.startswith != "ShaderNodeBsdf":
+						counter = 0
+						for input in node.inputs:
+							if input.type != 'RGBA':
+								continue
+							if not input.is_linked:
+								material.colors.append((input.default_value, counter))
+							else:
+								material.colors.append(((1.0, 1.0, 1.0, 1.0), counter))
+							counter += 1
+
 					if node.bl_idname == 'ShaderNodeTexImage':
 						if not node.image:
 							continue
@@ -382,7 +401,7 @@ class c_object(object):
 									usageHint = 0
 								if link.to_socket.identifier == 'Specular':
 									usageHint = 2
-								if link.to_socket.identifier == 'Normal':	
+								if link.to_socket.identifier == 'Normal':   
 									usageHint = 1
 								isValidImage = True
 								break
@@ -641,18 +660,17 @@ class c_armature(object):
 			self.name = ArmatureList[0].object.data.name
 		else:
 			return
-		armature = ArmatureList[0].object
+		armatureObject = ArmatureList[0].object
 
 		#apply object transforms
-#   	armature.select = True
-#   	bpy.context.scene.objects.active = armature
-#   	bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+		armatureRest = armatureObject.data #.copy()
+		#armatureRest.transform(armatureObject.matrix_world)
 
 		#get skeleton data
-		for bone in armature.data.bones:
-			b = c_bone(bone.name, armature.matrix_world @ bone.head_local, False if bone.parent else True)	#add bone
+		for bone in armatureRest.bones:
+			b = c_bone(bone.name, bone.head_local, False if bone.parent else True)  #add bone
 			for child in bone.children:
-				b.children.append(armature.data.bones.find(child.name))
+				b.children.append(armatureRest.bones.find(child.name))
 			self.bones.append(b)
 
 		vertspacemat = mathutils.Matrix.Identity(4)
@@ -665,12 +683,12 @@ class c_armature(object):
 		#get animation frames
 		frame_current = bpy.context.scene.frame_current
 		for action in bpy.data.actions:
-			armature.animation_data.action = action
+			armatureObject.animation_data.action = action
 			anim = c_animation(action.name)
 			for frame in range(int(action.frame_range[0]), int(action.frame_range[1])):
 				bpy.context.scene.frame_set(frame)
-				for i, bone in enumerate(armature.pose.bones):
-					index = armature.data.bones.find(bone.bone.name)
+				for i, bone in enumerate(armatureObject.pose.bones):
+					index = armatureRest.bones.find(bone.bone.name)
 					
 					trans = Matrix.Translation(vertspacemat @ bone.bone.head_local)
 					itrans = Matrix.Translation(vertspacemat @ (-bone.bone.head_local))
