@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
 	'blender': (2, 80, 0),
-	'version': (1, 6, 0),
+	'version': (1, 6, 1),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
@@ -187,9 +187,19 @@ bl_info = {
 #-scaled armatures and different origin of model and armature are problematic
 ##
 #################################
-##V1.6 2019/07/10
+##V1.6 2020/07/10
 #-fixed color export
 #-automatically apply object transformations to mesh
+#Known Problems:
+#-texture order may not fit uv order...
+#-scaled armatures and different origin of model and armature are problematic
+##
+#################################
+##V1.6.1 2020/07/28
+#-can now export color AND texture if using mix node
+#-hopefully fixed uvset export
+#-color usage hints now match texture usage hints
+#-base (0), specular (2), roughness (3) and emmision (4) colors are currently supported
 #Known Problems:
 #-texture order may not fit uv order...
 #-scaled armatures and different origin of model and armature are problematic
@@ -372,72 +382,79 @@ class c_object(object):
 
 			if mat.use_nodes and mat.node_tree:
 				for node in mat.node_tree.nodes:
-					if node.bl_idname.startswith != "ShaderNodeBsdf":
-						counter = 0
-						for input in node.inputs:
-							if input.type != 'RGBA':
-								continue
-							if not input.is_linked:
-								material.colors.append((input.default_value, counter))
+					if node.bl_idname.startswith('ShaderNodeBsdf'):
+						for colorInput in node.inputs:
+							usageHint = 0
+							wantsColor = True
+							if colorInput.identifier == 'Base Color':
+								usageHint = 0
+							elif colorInput.identifier == 'Specular':
+								usageHint = 2
+							elif colorInput.identifier == 'Roughness':
+								usageHint = 3
+							elif colorInput.identifier == 'Emission':
+								usageHint = 4
+							elif colorInput.identifier == 'Normal':   
+								usageHint = 1
+								wantsColor = False
 							else:
-								material.colors.append(((1.0, 1.0, 1.0, 1.0), counter))
-							counter += 1
+								continue
 
-					if node.bl_idname == 'ShaderNodeTexImage':
-						if not node.image:
-							continue
-						isValidImage = False
-						usageHint = 0
-						for output in node.outputs:
-							if output.identifier != 'Color':
-								continue
-							if not output.is_linked:
-								break
-							for link in output.links:
-								shaderNode = link.to_node
-								if shaderNode.bl_idname.startswith != "ShaderNodeBsdf":
-									continue
-								if link.to_socket.identifier == 'Base Color':
-									usageHint = 0
-								if link.to_socket.identifier == 'Specular':
-									usageHint = 2
-								if link.to_socket.identifier == 'Normal':   
-									usageHint = 1
-								isValidImage = True
-								break
-							if isValidImage == True:
-								break
-						
-						imgpath = node.image.filepath
-						img = imgpath.split('/')
-						img = img[len(img)-1]
-						img = img.split('\\')
-						img = img[len(img)-1]
-						if texextension != 'keep':
-							img = img[:-3]
-							img += texextension
-							
-						uvlayer = 0
-						isValidUVLayer = False
-						for input in node.inputs:
-							if not input.is_linked:
-								continue
-							if input.identifier != 'Vector':
-								continue
-							for link in input.links:
-								if link.to_node.bl_idname != 'ShaderNodeUVMap':
-									continue
-								uvlayer = obj.uv_layers.find(link.uv_map)
-								if uvlayer < 0:
+							if not colorInput.is_linked:
+								if colorInput.type == 'RGBA' and wantsColor:
+									material.colors.append((colorInput.default_value, usageHint))
+							else:
+								shaderNode = colorInput.links[0].from_node
+								if shaderNode.bl_idname == 'ShaderNodeMixRGB':
+									mixTextureNode = None
+									for mixInput in shaderNode.inputs:
+										if not mixInput.identifier.startswith('Color'):
+											continue
+										if not mixInput.is_linked:
+											if wantsColor:
+												material.colors.append((mixInput.default_value, usageHint))
+										elif not mixTextureNode:
+											mixTextureNode = mixInput.links[0].from_node
+										else:
+											if wantsColor:
+												material.colors.append(((1.0, 1.0, 1.0, 1.0), usageHint))
+									shaderNode = mixTextureNode #Assign to shaderNode to run into the next if as it is hopefully the texture node
+
+								if shaderNode.bl_idname == 'ShaderNodeTexImage':
+									if not shaderNode.image:
+										continue
+									
+									imgpath = shaderNode.image.filepath
+									img = imgpath.split('/')
+									img = img[len(img)-1]
+									img = img.split('\\')
+									img = img[len(img)-1]
+									if texextension != 'keep':
+										img = img[:-3]
+										img += texextension
+										
 									uvlayer = 0
-								isValidUVLayer = True
-								break
-							if isValidUVLayer == True:
-								break
-								
-						if not uvlayer in material.imagedict:
-							material.imagedict[uvlayer] = []
-						material.imagedict[uvlayer].append((img, usageHint))
+									isValidUVLayer = False
+									for input in shaderNode.inputs:
+										if not input.is_linked:
+											continue
+										if input.identifier != 'Vector':
+											continue
+										for link in input.links:
+											if link.from_node.bl_idname != 'ShaderNodeUVMap':
+												continue
+											uvlayer = obj.uv_layers.find(link.uv_map)
+											if uvlayer < 0:
+												uvlayer = 0
+											isValidUVLayer = True
+											break
+										if isValidUVLayer == True:
+											break
+											
+									if not uvlayer in material.imagedict:
+										material.imagedict[uvlayer] = []
+									material.imagedict[uvlayer].append((img, usageHint))
+						break
 
 			materials.append(material)
 
