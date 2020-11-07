@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
 	'blender': (2, 80, 0),
-	'version': (1, 6, 1),
+	'version': (1, 6, 2),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
@@ -204,6 +204,13 @@ bl_info = {
 #-texture order may not fit uv order...
 #-scaled armatures and different origin of model and armature are problematic
 ##
+#################################
+##V1.6.2 2020/11/07
+#-fixed two different diffuse colors getting exported
+#Known Problems:
+#-texture order may not fit uv order...
+#-scaled armatures and different origin of model and armature are problematic
+##
 
 #################################
 #ToDO
@@ -375,11 +382,6 @@ class c_object(object):
 		materials = []
 		for i, mat in enumerate(obj.materials):
 			material = c_material()
-			if mat.blend_method != 'OPAQUE':
-				material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], mat.alpha), 0))
-			else:
-				material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], 1.0), 0))
-
 			if mat.use_nodes and mat.node_tree:
 				for node in mat.node_tree.nodes:
 					if node.bl_idname.startswith('ShaderNodeBsdf'):
@@ -456,6 +458,12 @@ class c_object(object):
 									material.imagedict[uvlayer].append((img, usageHint))
 						break
 
+			else:
+				if mat.blend_method != 'OPAQUE':
+					material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], mat.alpha), 0))
+				else:
+					material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], 1.0), 0))
+					
 			materials.append(material)
 
 		obj.calc_normals_split()
