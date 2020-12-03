@@ -4,8 +4,8 @@
 bl_info = {
 	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
-	'blender': (2, 80, 0),
-	'version': (1, 6, 2),
+	'blender': (2, 90, 0),
+	'version': (2, 0, 0),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
@@ -211,14 +211,24 @@ bl_info = {
 #-texture order may not fit uv order...
 #-scaled armatures and different origin of model and armature are problematic
 ##
+#################################
+##V2.0.0 2020/03/12
+#-added "Apply transforms" option which will automatically apply all transforms to the exported model, but makes it optional
+#-added "Join objects" option which will automatically combine all selected objects into one exported model and ALWAYS applies all transforms
+#-added support for exporting all selected objects into their own model file which will be called filename.objectname.sgm
+#-sgm file extension is now automatically added if not specified by the user
+#-added "Copy textures" option, which will save all textures referenced by the exported objects next to the files as png (currently it may change the textures color profile and other things based on the blender project setup)
+#-added support for multiple textures per shader input (this allows for exporting lightmaps)
+#-improved texture search, to find all textures used by a material, not just one that is directly connected
+#Known Problems:
+#-scaled armatures and different origin of model and armature are problematic
+##
 
 #################################
 #ToDO
 #################################
 #-automatically apply object transformations to armature
-#-combine and export all selected objects into one model
 #-generation and export of shadow volume data, which otherwize is done on model loading in iSDGE
-#-automatic converting of texture files to the desired format
 #-export of more complex material setups
 #(-support for morph animations)
 
@@ -233,13 +243,15 @@ import struct
 import math
 import mathutils
 from mathutils import Matrix
+from pathlib import Path
 
 #Container classes for a better overview
 class c_material(object):
-	__slots__ = 'imagedict', 'colors'
-	def __init__(self):
+	__slots__ = 'imagedict', 'colors', 'name'
+	def __init__(self, name):
 		self.imagedict = {}
 		self.colors = []
+		self.name = name
 
 class c_vertex(object):
 	__slots__ = 'blendindex', 'position', 'uvs', 'color', 'normal', 'tangent', 'weights', 'bones'
@@ -365,153 +377,137 @@ class c_mesh(object):
 class c_object(object):
 	__slots__ = 'meshs', 'hasbones', 'animname'
 	#splits the blender object into triangle meshs with the same textures
-	def __init__(self, objparent, obj, exptangents, texextension):
-		#check for bones
+	def __init__(self, objects, exptangents, texextension, applytransforms, copytextures):
+		
 		self.hasbones = False
-		ArmatureList = [Modifier for Modifier in objparent.modifiers if Modifier.type == "ARMATURE"]
-		if ArmatureList:
-			self.hasbones = True
-		if len(ArmatureList) > 1:
-			print("only one armature per object supported: possible messed up bone assignements")
-
-		#apply object transforms
-		obj = obj.copy()
-		obj.transform(objparent.matrix_world)
-
-		#generate list of the objects materials
+		#check for bones, only supported when exporting a single object, ignore otherwise
+		if len(objects) == 1:
+			ArmatureList = [Modifier for Modifier in objects[0].modifiers if Modifier.type == "ARMATURE"]
+			if ArmatureList:
+				self.hasbones = True
+			if len(ArmatureList) > 1:
+				print("only one armature per object supported: possible messed up bone assignements")
+		
 		materials = []
-		for i, mat in enumerate(obj.materials):
-			material = c_material()
-			if mat.use_nodes and mat.node_tree:
-				for node in mat.node_tree.nodes:
-					if node.bl_idname.startswith('ShaderNodeBsdf'):
-						for colorInput in node.inputs:
-							usageHint = 0
-							wantsColor = True
-							if colorInput.identifier == 'Base Color':
-								usageHint = 0
-							elif colorInput.identifier == 'Specular':
-								usageHint = 2
-							elif colorInput.identifier == 'Roughness':
-								usageHint = 3
-							elif colorInput.identifier == 'Emission':
-								usageHint = 4
-							elif colorInput.identifier == 'Normal':   
-								usageHint = 1
-								wantsColor = False
-							else:
-								continue
-
-							if not colorInput.is_linked:
-								if colorInput.type == 'RGBA' and wantsColor:
-									material.colors.append((colorInput.default_value, usageHint))
-							else:
-								shaderNode = colorInput.links[0].from_node
-								if shaderNode.bl_idname == 'ShaderNodeMixRGB':
-									mixTextureNode = None
-									for mixInput in shaderNode.inputs:
-										if not mixInput.identifier.startswith('Color'):
-											continue
-										if not mixInput.is_linked:
-											if wantsColor:
-												material.colors.append((mixInput.default_value, usageHint))
-										elif not mixTextureNode:
-											mixTextureNode = mixInput.links[0].from_node
-										else:
-											if wantsColor:
-												material.colors.append(((1.0, 1.0, 1.0, 1.0), usageHint))
-									shaderNode = mixTextureNode #Assign to shaderNode to run into the next if as it is hopefully the texture node
-
-								if shaderNode.bl_idname == 'ShaderNodeTexImage':
-									if not shaderNode.image:
-										continue
-									
-									imgpath = shaderNode.image.filepath
-									img = imgpath.split('/')
-									img = img[len(img)-1]
-									img = img.split('\\')
-									img = img[len(img)-1]
-									if texextension != 'keep':
-										img = img[:-3]
-										img += texextension
-										
-									uvlayer = 0
-									isValidUVLayer = False
-									for input in shaderNode.inputs:
-										if not input.is_linked:
-											continue
-										if input.identifier != 'Vector':
-											continue
-										for link in input.links:
-											if link.from_node.bl_idname != 'ShaderNodeUVMap':
-												continue
-											uvlayer = obj.uv_layers.find(link.uv_map)
-											if uvlayer < 0:
-												uvlayer = 0
-											isValidUVLayer = True
-											break
-										if isValidUVLayer == True:
-											break
-											
-									if not uvlayer in material.imagedict:
-										material.imagedict[uvlayer] = []
-									material.imagedict[uvlayer].append((img, usageHint))
-						break
-
-			else:
-				if mat.blend_method != 'OPAQUE':
-					material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], mat.alpha), 0))
-				else:
-					material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], 1.0), 0))
-					
-			materials.append(material)
-
-		obj.calc_normals_split()
-		obj.calc_loop_triangles()
 		triangles = []
-		#generate vertices and triangles
-		for triangle in obj.loop_triangles:
-			verts = []
-			for n, vertind in enumerate(triangle.vertices):
-				uvs = []
-				for uv_layer in obj.uv_layers:
-					loopIndex = triangle.loops[n]
-					uvs.append((round(uv_layer.data[loopIndex].uv[0], 6), 1.0-round(uv_layer.data[loopIndex].uv[1], 6)))
+		materialmapping = {}
+		materialoffset = 0
+		for object in objects:
+			#apply object transforms
+			objectdata = object.data.copy()
+			if applytransforms:
+				objectdata.transform(object.matrix_world)
+
+			#generate list of the objects materials
+			for i, mat in enumerate(objectdata.materials):
+				foundmaterial = False
+				for n, existingmaterial in enumerate(materials):
+					if existingmaterial.name == mat.name:
+						materialmapping[materialoffset + i] = n
+						foundmaterial = True
+						break
+				if foundmaterial:
+					continue
 				
-				color = None
-				for color_layer in obj.vertex_colors:
-					loopIndex = triangle.loops[n]
-					colorArray = color_layer.data[loopIndex].color
-					color = (colorArray[0], colorArray[1], colorArray[2], colorArray[3])
+				material = c_material(mat.name)
+				materialmapping[materialoffset + i] = len(materials)
+				if mat.use_nodes and mat.node_tree:
+					for node in mat.node_tree.nodes:
+						if node.bl_idname.startswith('ShaderNodeBsdf'):
+							for colorInput in node.inputs:
+								usageHint = 0
+								wantsColor = True
+								if colorInput.identifier == 'Base Color':
+									usageHint = 0
+								elif colorInput.identifier == 'Specular':
+									usageHint = 2
+								elif colorInput.identifier == 'Roughness':
+									usageHint = 3
+								elif colorInput.identifier == 'Emission':
+									usageHint = 4
+								elif colorInput.identifier == 'Normal':   
+									usageHint = 1
+									wantsColor = False
+								else:
+									continue
+								
+								shaderInputs = self.get_shader_input(colorInput, objectdata, [])
+								print(shaderInputs)
+								for input in shaderInputs:
+									if input[0] == "COLOR" and wantsColor:
+										material.colors.append((input[1], usageHint))
+									if input[0] == "TEXTURE":
+										uvlayer = input[1]
+										if not uvlayer in material.imagedict:
+											material.imagedict[uvlayer] = []
+										img = input[2]
+										if texextension != 'keep':
+											img = img[:-3]
+											img += texextension
+										material.imagedict[uvlayer].append((img, usageHint, input[3]))
+							break
+
+				else:
+					if mat.blend_method != 'OPAQUE':
+						material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], mat.alpha), 0))
+					else:
+						material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], 1.0), 0))
+						
+				print("NEW MATERIAL:")
+				for uvlayer in material.imagedict:
+					for other in material.imagedict[uvlayer]:
+						print(other[0])
+				materials.append(material)
+				print("\n")
+
+			objectdata.calc_normals_split()
+			objectdata.calc_loop_triangles()
+			#generate vertices and triangles
+			for triangle in objectdata.loop_triangles:
+				verts = []
+				for n, vertind in enumerate(triangle.vertices):
+					uvs = []
+					for uv_layer in objectdata.uv_layers:
+						loopIndex = triangle.loops[n]
+						uvs.append((round(uv_layer.data[loopIndex].uv[0], 6), 1.0-round(uv_layer.data[loopIndex].uv[1], 6)))
+					
+					color = None
+					for color_layer in objectdata.vertex_colors:
+						loopIndex = triangle.loops[n]
+						colorArray = color_layer.data[loopIndex].color
+						color = (colorArray[0], colorArray[1], colorArray[2], colorArray[3])
+					
+					position = (objectdata.vertices[vertind].co.x, objectdata.vertices[vertind].co.y, objectdata.vertices[vertind].co.z)
+					normal = (triangle.split_normals[n][0], triangle.split_normals[n][1], triangle.split_normals[n][2])
+
+					#get vertex weights and bone indices
+					weights = [0, 0, 0, 0]
+					bones = [0, 0, 0, 0]
+					if self.hasbones == True:
+						groups = sorted(objectdata.vertices[vertind].groups, key=lambda item: item.weight, reverse=True)
+
+						sumweights = 0
+						for g, group in enumerate(groups):
+							if g > 3:
+								break
+							sumweights += group.weight
+
+						for g, group in enumerate(groups):
+							if g > 3:
+								print("more then four groups assigned to vertex: loss of data")
+								break
+							weights[g] = group.weight/sumweights
+							bones[g] = ArmatureList[0].object.data.bones.find(object.vertex_groups[group.group].name)
 				
-				position = (obj.vertices[vertind].co.x, obj.vertices[vertind].co.y, obj.vertices[vertind].co.z)
-				normal = (triangle.split_normals[n][0], triangle.split_normals[n][1], triangle.split_normals[n][2])
-
-				#get vertex weights and bone indices
-				weights = [0, 0, 0, 0]
-				bones = [0, 0, 0, 0]
-				if self.hasbones == True:
-					groups = sorted(obj.vertices[vertind].groups, key=lambda item: item.weight, reverse=True)
-
-					sumweights = 0
-					for g, group in enumerate(groups):
-						if g > 3:
-							break
-						sumweights += group.weight
-
-					for g, group in enumerate(groups):
-						if g > 3:
-							print("more then four groups assigned to vertex: loss of data")
-							break
-						weights[g] = group.weight/sumweights
-						bones[g] = ArmatureList[0].object.data.bones.find(objparent.vertex_groups[group.group].name)
-			
-				verts.append(c_vertex(vertind, position, uvs, color, normal))
-				verts[-1].weights = weights #hacky as the above line should already do this, but for some reason does not...
-				verts[-1].bones = bones
-			
-			material = materials[triangle.material_index]
-			triangles.append(c_triangle(verts, material))
+					verts.append(c_vertex(vertind, position, uvs, color, normal))
+					verts[-1].weights = weights #hacky as the above line should already do this, but for some reason does not...
+					verts[-1].bones = bones
+				
+				realmaterialindex = materialmapping[materialoffset + triangle.material_index]
+				material = materials[realmaterialindex]
+				triangles.append(c_triangle(verts, material))
+				
+			materialoffset += len(objectdata.materials)
 		
 		#generate meshs
 		self.meshs = []
@@ -648,6 +644,70 @@ class c_object(object):
 			file.write(struct.pack('<B', 0)) #does not have animations
 	
 		file.close()
+		
+		
+	def copy_textures(self, filename):
+		for i, mesh in enumerate(self.meshs):
+			numuvs = len(mesh.material.imagedict)
+			for uv in range(0, numuvs):
+				for img in mesh.material.imagedict[uv]:
+					path = Path(filename)
+					path = path.parent.joinpath(img[0])
+					if path.suffix == ".*":
+						path = path.with_suffix(".png")
+					if not path.exists():
+						img[2].save_render(str(path.resolve()))
+						
+	
+	def get_shader_input(self, input, objectdata, inputs = []):
+		if not input.is_linked:
+			if input.type == 'RGBA':
+				inputs.append(('COLOR', input.default_value))
+				print(input.default_value)
+			return inputs
+		
+		shaderNode = input.links[0].from_node
+		
+		if shaderNode.bl_idname == 'ShaderNodeRGB':
+			inputs.append(('COLOR', shaderNode.color))
+			print(shaderNode.color)
+			return inputs
+		
+		if shaderNode.bl_idname == 'ShaderNodeTexImage':
+			if not shaderNode.image:
+				return inputs
+			
+			imgpath = shaderNode.image.filepath
+			img = imgpath.split('/')
+			img = img[len(img)-1]
+			img = img.split('\\')
+			img = img[len(img)-1]
+				
+			uvlayer = 0
+			isValidUVLayer = False
+			for newInput in shaderNode.inputs:
+				if not newInput.is_linked:
+					continue
+				if newInput.identifier != 'Vector':
+					continue
+				for link in newInput.links:
+					if link.from_node.bl_idname != 'ShaderNodeUVMap':
+						continue
+					uvlayer = objectdata.uv_layers.find(link.from_node.uv_map)
+					if uvlayer < 0:
+						uvlayer = 0
+					isValidUVLayer = True
+					break
+				if isValidUVLayer == True:
+					break
+					
+			inputs.append(("TEXTURE", uvlayer, img, shaderNode.image))
+			return inputs
+		
+		for newInput in shaderNode.inputs:
+			self.get_shader_input(newInput, objectdata, inputs)
+			
+		return inputs
 
 
 class c_boneframe(object):
@@ -810,7 +870,6 @@ class ExportSGM(bpy.types.Operator):
 	bl_label = 'Export Rayne Model'
 
 	filepath : StringProperty(name="File Path", description="Filepath used for exporting the Rayne model file", maxlen= 1024, default= "")
-	#filepath = StringProperty(subtype='FILE_PATH')
 	check_existing : BoolProperty(name="Check Existing", description="Check and warn on overwriting existing files", default=True, options={'HIDDEN'})
 	
 	#properties
@@ -818,8 +877,6 @@ class ExportSGM(bpy.types.Operator):
 	texextension : EnumProperty(
 			name="Texture extension",
 			items=(('png', ".png", ""),
-				   ('dds', ".dds", ""),
-				   ('astc', ".astc", ""),
 				   ('*', "flexible", ""),
 				   ('keep', "keep current", ""),
 				   ),
@@ -827,19 +884,42 @@ class ExportSGM(bpy.types.Operator):
 			)
 	exptangents : BoolProperty(name="Export tangents", description="Generate tangents for the model to use for example tangent space normal mapping.", default=True)
 	expanimations : BoolProperty(name="Export animations", description="Export animation data in an additional file and reference it in the object.", default=True)
+	applytransforms : BoolProperty(name="Apply transforms", description="Apply all object transforms, making the exported object origin equal to the blender world origin.", default=False)
+	joinobjects : BoolProperty(name="Join objects", description="Joins all selected objects into one. This will automatically apply the transform if more than one object is selected. This will ignore armatures!", default=False)
+	copytextures : BoolProperty(name="Copy textures", description="Copy all textures used by the exported objects materials into the same folder as the exported file. This will convert to png if png of flexible format is exported. It will NOT overwrite existing files.", default=False)
 	
 	def execute(self, context):
 		bpy.ops.object.mode_set(mode='OBJECT')
 		print("start exporting .sgm file")
-		obj = c_object(context.object, context.object.data, self.exptangents, self.texextension)
-		obj.animname = os.path.basename(self.properties.filepath[0:len(self.properties.filepath)-4]+".sga")
-		obj.write(self.properties.filepath, self.exptextures, self.exptangents, self.expanimations)
-		print("finished exporting .sgm file")
-		if obj.hasbones and self.expanimations:
-			print("start exporting .sga file")
-			arm = c_armature(context.object)
-			arm.write(self.properties.filepath[0:len(self.properties.filepath)-4]+".sga")
-			print("finished exporting .sga file")
+		
+		if not self.filepath.endswith(".sgm"):
+			self.filepath += ".sgm"
+		
+		didjoinobjects = False
+		if self.joinobjects and len(context.selected_objects) > 1:
+			obj = c_object(context.selected_objects, self.exptangents, self.texextension, True, self.copytextures)
+			obj.write(self.filepath, self.exptextures, self.exptangents, False)
+			if self.copytextures and self.exptextures:
+				obj.copy_textures(self.filepath)
+		else:
+			for object in context.selected_objects:
+				path = Path(self.filepath)
+				if len(context.selected_objects) > 1:
+					path = path.with_suffix("." + object.name + ".sgm")
+				actualfilepath = str(path)
+				print(actualfilepath)
+				obj = c_object([object], self.exptangents, self.texextension, self.applytransforms, self.copytextures)
+				obj.animname = os.path.basename(actualfilepath[0:len(actualfilepath)-4]+".sga")
+				obj.write(actualfilepath, self.exptextures, self.exptangents, self.expanimations)
+				if self.copytextures and self.exptextures:
+					obj.copy_textures(self.filepath)
+				print("finished exporting .sgm file")
+				if obj.hasbones and self.expanimations:
+					print("start exporting .sga file")
+					arm = c_armature(context.object)
+					arm.write(actualfilepath[0:len(actualfilepath)-4]+".sga")
+					print("finished exporting .sga file")
+			
 		return {'FINISHED'}
 
 	def invoke(self, context, event):
