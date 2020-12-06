@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
 	'blender': (2, 90, 0),
-	'version': (2, 0, 0),
+	'version': (2, 0, 1),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
@@ -220,6 +220,14 @@ bl_info = {
 #-added "Copy textures" option, which will save all textures referenced by the exported objects next to the files as png (currently it may change the textures color profile and other things based on the blender project setup)
 #-added support for multiple textures per shader input (this allows for exporting lightmaps)
 #-improved texture search, to find all textures used by a material, not just one that is directly connected
+#Known Problems:
+#-scaled armatures and different origin of model and armature are problematic
+##
+#################################
+##V2.0.1 2020/06/12
+#-fixed exporting materials using the RGB node
+#-fixed exporting materials not using all uv sets
+#-removed some debug logging
 #Known Problems:
 #-scaled armatures and different origin of model and armature are problematic
 ##
@@ -453,12 +461,7 @@ class c_object(object):
 					else:
 						material.colors.append(((mat.diffuse_color[0], mat.diffuse_color[1], mat.diffuse_color[2], 1.0), 0))
 						
-				print("NEW MATERIAL:")
-				for uvlayer in material.imagedict:
-					for other in material.imagedict[uvlayer]:
-						print(other[0])
 				materials.append(material)
-				print("\n")
 
 			objectdata.calc_normals_split()
 			objectdata.calc_loop_triangles()
@@ -547,16 +550,22 @@ class c_object(object):
 			if exptextures != True:
 				file.write(struct.pack('<B', 0))	#uvcount
 			else:
-				numuvs = len(mesh.material.imagedict)
+				numuvs = 0
+				for uv in mesh.material.imagedict:
+					if uv >= numuvs:
+						numuvs = uv + 1
 				file.write(struct.pack('<B', numuvs)) #uvcount
 				for uv in range(0, numuvs):
-					numimgs = len(mesh.material.imagedict[uv])
+					numimgs = 0
+					if uv in mesh.material.imagedict:
+						numimgs = len(mesh.material.imagedict[uv])
 					file.write(struct.pack('<B', numimgs)) #imagecount
-					for img in mesh.material.imagedict[uv]:
-						file.write(struct.pack('<B', img[1])) #usage hint
-						texname = img[0].encode("utf_8")
-						file.write(struct.pack('<H', len(texname)+1))
-						file.write(struct.pack('<%is'%(len(texname)+1), texname))
+					if numimgs > 0:
+						for img in mesh.material.imagedict[uv]:
+							file.write(struct.pack('<B', img[1])) #usage hint
+							texname = img[0].encode("utf_8")
+							file.write(struct.pack('<H', len(texname)+1))
+							file.write(struct.pack('<%is'%(len(texname)+1), texname))
 
 			numcols = len(mesh.material.colors)
 			file.write(struct.pack('<B', numcols)) #number of colors
@@ -669,7 +678,7 @@ class c_object(object):
 		shaderNode = input.links[0].from_node
 		
 		if shaderNode.bl_idname == 'ShaderNodeRGB':
-			inputs.append(('COLOR', shaderNode.color))
+			inputs.append(('COLOR', shaderNode.outputs[0].default_value))
 			print(shaderNode.color)
 			return inputs
 		
