@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
 	'blender': (3, 0, 0),
-	'version': (2, 1, 0),
+	'version': (2, 1, 1),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
