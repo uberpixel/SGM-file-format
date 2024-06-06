@@ -245,6 +245,12 @@ bl_info = {
 #Known Problems:
 #-scaled armatures and different origin of model and armature are problematic
 ##
+#################################
+##V2.1.2 2024/06/07
+#-Messed around with gamma for vertex color export. Seems to better match the rendering in blender now.
+#Known Problems:
+#-scaled armatures and different origin of model and armature are problematic
+##
 
 #################################
 #ToDO
@@ -494,7 +500,7 @@ class c_object(object):
 					for color_layer in objectdata.vertex_colors:
 						loopIndex = triangle.loops[n]
 						colorArray = color_layer.data[loopIndex].color
-						color = (colorArray[0], colorArray[1], colorArray[2], colorArray[3])
+						color = (pow(colorArray[0], 2.2), pow(colorArray[1], 2.2), pow(colorArray[2], 2.2), pow(colorArray[3], 2.2))
 					
 					position = (objectdata.vertices[vertind].co.x, objectdata.vertices[vertind].co.y, objectdata.vertices[vertind].co.z)
 					normal = (triangle.split_normals[n][0], triangle.split_normals[n][1], triangle.split_normals[n][2])
