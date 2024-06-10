@@ -5,7 +5,7 @@ bl_info = {
 	'name': 'Rayne model and animation formats (.sgm, .sga)',
 	'author': 'Nils Daumann',
 	'blender': (3, 0, 0),
-	'version': (2, 1, 1),
+	'version': (2, 1, 3),
 	'description': 'Exports an object as .sgm file format and its animations as .sga file.',
 	'category': 'Import-Export',
 	'location': 'File -> Export -> Rayne Model (.sgm, .sga)'}
@@ -251,6 +251,12 @@ bl_info = {
 #Known Problems:
 #-scaled armatures and different origin of model and armature are problematic
 ##
+#################################
+##V2.1.3 2024/06/10
+#-Fixed animation export.
+#Known Problems:
+#-scaled armatures and different origin of model and armature are problematic
+##
 
 #################################
 #ToDO
@@ -283,7 +289,7 @@ class c_material(object):
 
 class c_vertex(object):
 	__slots__ = 'blendindex', 'position', 'uvs', 'color', 'normal', 'tangent', 'weights', 'bones'
-	def __init__(self, blendindex, position = (0, 0, 0), uvs = [], color = None, normal = (0, 0, 0), tangent = (0, 0, 0, 0), weights = (0, 0, 0, 0), bones = (0, 0, 0, 0)):
+	def __init__(self, blendindex, position = (0, 0, 0), uvs = [], color = None, normal = (0, 0, 0), weights = (0, 0, 0, 0), bones = (0, 0, 0, 0), tangent = (0, 0, 0, 0)):
 		self.blendindex = blendindex	#index within the blender mesh
 		self.position = position
 		self.uvs = uvs
@@ -413,6 +419,8 @@ class c_object(object):
 			ArmatureList = [Modifier for Modifier in objects[0].modifiers if Modifier.type == "ARMATURE"]
 			if ArmatureList:
 				self.hasbones = True
+				print(ArmatureList[0].object.data.bones.values())
+				ArmatureList[0].object.data.pose_position = 'REST'
 			if len(ArmatureList) > 1:
 				print("only one armature per object supported: possible messed up bone assignements")
 		
@@ -490,20 +498,20 @@ class c_object(object):
 			#generate vertices and triangles
 			for triangle in objectdata.loop_triangles:
 				verts = []
-				for n, vertind in enumerate(triangle.vertices):
+				for i in range(3):
+					vertind = triangle.vertices[i]
+					loopIndex = triangle.loops[i]
 					uvs = []
 					for uv_layer in objectdata.uv_layers:
-						loopIndex = triangle.loops[n]
 						uvs.append((round(uv_layer.data[loopIndex].uv[0], 6), 1.0-round(uv_layer.data[loopIndex].uv[1], 6)))
 					
 					color = None
 					for color_layer in objectdata.vertex_colors:
-						loopIndex = triangle.loops[n]
 						colorArray = color_layer.data[loopIndex].color
 						color = (pow(colorArray[0], 2.2), pow(colorArray[1], 2.2), pow(colorArray[2], 2.2), pow(colorArray[3], 2.2))
 					
 					position = (objectdata.vertices[vertind].co.x, objectdata.vertices[vertind].co.y, objectdata.vertices[vertind].co.z)
-					normal = (triangle.split_normals[n][0], triangle.split_normals[n][1], triangle.split_normals[n][2])
+					normal = (triangle.split_normals[i][0], triangle.split_normals[i][1], triangle.split_normals[i][2])
 
 					#get vertex weights and bone indices
 					weights = [0, 0, 0, 0]
@@ -519,14 +527,17 @@ class c_object(object):
 
 						for g, group in enumerate(groups):
 							if g > 3:
-								print("more then four groups assigned to vertex: loss of data")
+								print("more then four groups assigned to vertex: loss of data, " + str(len(groups)))
 								break
 							weights[g] = group.weight/sumweights
 							bones[g] = ArmatureList[0].object.data.bones.find(obj.vertex_groups[group.group].name)
+							if bones[g] < 0:
+								print("Bone missing: " + obj.vertex_groups[group.group].name + ", " + str(len(groups)))
+								bones[g] = 0 #Didn't find a bone with that name
 				
-					verts.append(c_vertex(vertind, position, uvs, color, normal))
-					verts[-1].weights = weights #hacky as the above line should already do this, but for some reason does not...
-					verts[-1].bones = bones
+					verts.append(c_vertex(vertind, position, uvs, color, normal, weights, bones))
+					#verts[-1].weights = weights #hacky as the above line should already do this, but for some reason does not...
+					#verts[-1].bones = bones
 				
 				realmaterialindex = materialmapping[materialoffset + triangle.material_index]
 				material = materials[realmaterialindex]
@@ -786,6 +797,7 @@ class c_armature(object):
 
 		#apply object transforms
 		armatureRest = armatureObject.data #.copy()
+		armatureRest.pose_position = 'POSE'
 		#armatureRest.transform(armatureObject.matrix_world)
 
 		#get skeleton data
@@ -807,7 +819,8 @@ class c_armature(object):
 			animationActions.append(animationData.action)
 		for track in animationData.nla_tracks:
 			for strip in track.strips:
-				animationActions.append(strip.action)
+				if strip.action != None:
+					animationActions.append(strip.action)
 
 		#get animation frames
 		frame_current = bpy.context.scene.frame_current
